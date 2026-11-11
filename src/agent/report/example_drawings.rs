@@ -4,6 +4,28 @@
 use super::{spelled_words, visit_strings};
 use crate::agent::{InterviewMode, Problem};
 
+/// What "your image" may modify without being the candidate's picture, on an
+/// exercise that processes images.
+const IMAGE_NOUNS: &[&str] = &[
+    "rotation",
+    "processing",
+    "filter",
+    "filters",
+    "resize",
+    "resizing",
+    "scaling",
+    "size",
+    "sizes",
+    "data",
+    "buffer",
+    "matrix",
+    "pixels",
+    "pipeline",
+    "transform",
+    "transformation",
+    "convolution",
+];
+
 // Coding assessment describes code and conversation. The optional drawing is
 // shown separately, so references to it belong in neither score's feedback.
 pub(super) fn example_drawing_judgments(
@@ -45,10 +67,6 @@ pub(super) fn example_drawing_judgments(
             let visual_reference = text.split_inclusive(['.', '!', '?']).any(|sentence| {
                 let words = spelled_words(sentence);
                 words.iter().enumerate().any(|(index, word)| {
-                    if problem_words.contains(word) {
-                        return false;
-                    }
-
                     // References to exercise input are not references to an
                     // optional drawing. Apply this exception to each mention,
                     // so an input image cannot excuse a drawing in the same
@@ -92,8 +110,15 @@ pub(super) fn example_drawing_judgments(
                     {
                         return false;
                     }
-                    let owned = before.last().is_some_and(|word| word == "your")
-                        || after.starts_with(&["you".to_string(), "drew".to_string()]);
+
+                    // The candidate's, said in any person: "your", "their",
+                    // "you drew", "they drew", and "the example drawing".
+                    let owned = before.last().is_some_and(|word| {
+                        matches!(word.as_str(), "your" | "their" | "his" | "her" | "example")
+                    }) || after
+                        .first()
+                        .is_some_and(|word| matches!(word.as_str(), "you" | "they" | "he" | "she"))
+                        && after.get(1).is_some_and(|word| word == "drew");
                     let produced = before.iter().rev().take(4).any(|word| {
                         matches!(
                             word.as_str(),
@@ -101,6 +126,13 @@ pub(super) fn example_drawing_judgments(
                         )
                     });
                     let recommendation = words.first().is_some_and(|word| word == "draw");
+
+                    // The exercise's own word is not refused on a loose cue,
+                    // but "your" or "you drew" names the candidate's picture
+                    // whatever the problem also calls its figures.
+                    if problem_words.contains(word) {
+                        return owned;
+                    }
                     owned || produced || recommendation
                 })
             });
@@ -108,9 +140,16 @@ pub(super) fn example_drawing_judgments(
             // An image may be the exercise's input, rather than the candidate's
             // optional drawing. Keep ordinary reasoning about that input.
             let normalized = format!(" {} ", words.join(" "));
-            let candidate_image = ["your image", "provided an image", "uploaded an image"]
-                .iter()
-                .any(|phrase| normalized.contains(&format!(" {phrase} ")));
+
+            // "Your image" before an image-processing noun is feedback on the
+            // exercise, not on the candidate's picture.
+            let your_image = words.windows(3).any(|at| {
+                at[0] == "your" && at[1] == "image" && !IMAGE_NOUNS.contains(&at[2].as_str())
+            }) || words.ends_with(&["your".to_string(), "image".to_string()]);
+            let candidate_image = your_image
+                || ["provided an image", "uploaded an image"]
+                    .iter()
+                    .any(|phrase| normalized.contains(&format!(" {phrase} ")));
             if visual_reference || candidate_image {
                 errors.push(format!("{path}: example drawings are outside coding and communication assessment; remove the visual reference and any credit or deduction based on it. Use only code, tests or the candidate's actual conversation under the original rubric, never the interviewer's interpretation of a picture"));
             }
