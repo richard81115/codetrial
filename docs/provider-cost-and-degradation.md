@@ -505,7 +505,10 @@ gets a fresh room. Strict always
 uses fresh room names. Practice does too without a development pin, which
 production ignores, so a reload can overlap the previous attempt's cleanup.
 Guests never reuse a live room and have a separate limit of two
-within the global cap. Task completion and panic release slots. A report
+within the global cap. A signed-in account may hold four starts that no
+candidate has joined, and a fifth is refused with 429, so one account cannot
+fill the slots with rooms it never enters; a start whose candidate joined, or
+that ended, stops counting. Task completion and panic release slots. A report
 recovery window keeps its slot and LiveKit connection until expiry or 30 seconds
 after candidate departure, at most five minutes plus a 125-second regeneration
 and a 30-second rejoin. Provider outages can therefore fill the slots with
