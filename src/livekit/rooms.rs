@@ -202,14 +202,14 @@ pub(super) async fn evict_duplicate_agent(
 /// client timeout ends within thirty seconds, writes at most one log line and
 /// holds the cloned config only for that time, so an interview that ends under
 /// it leaves nothing running that nothing else bounds.
-pub(super) fn spawn_duplicate_eviction(
-    config: &AgentConfig,
-    room_name: &str,
-    identity: String,
-    now_seconds: u64,
-) {
+pub(super) fn spawn_duplicate_eviction(config: &AgentConfig, room_name: &str, identity: String) {
     let config = config.clone();
     let room_name = room_name.to_owned();
+
+    // Signed from the clock now: the credential lives five minutes, and a time
+    // taken when the interview began would have lapsed by the time a duplicate
+    // joins.
+    let now_seconds = crate::current_epoch_seconds();
     tokio::spawn(async move {
         if let Err(error) = evict_duplicate_agent(&config, &room_name, &identity, now_seconds).await
         {

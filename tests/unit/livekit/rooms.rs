@@ -551,7 +551,6 @@ async fn a_duplicate_is_evicted_without_the_caller_waiting() {
         &service.config(),
         "interview-abc12345",
         "agent-late".to_owned(),
-        1_700_000_000,
     );
 
     let arrived = async {
@@ -583,6 +582,15 @@ fn the_room_loop_evicts_a_duplicate_only_through_the_helper() {
         !hub.contains("evict_duplicate_agent(config"),
         "the loop must not await the removal itself"
     );
+
+    // The credential it signs lives five minutes, so the helper reads the clock
+    // itself: a time handed down from when the interview began would have
+    // lapsed by the time a duplicate joins.
+    let helper = include_str!("../../../src/livekit/rooms.rs")
+        .split("fn spawn_duplicate_eviction")
+        .nth(1)
+        .unwrap();
+    assert!(helper.contains("crate::current_epoch_seconds()"));
 }
 
 /// A removal that finds nobody is done, and every other refusal is not.
