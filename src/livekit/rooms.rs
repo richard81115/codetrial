@@ -192,6 +192,32 @@ pub(super) async fn evict_duplicate_agent(
     remove_room_participant(config, room_name, identity, now_seconds).await
 }
 
+/// Evicts a duplicate agent from a task of its own. The room loop calls this
+/// and must not wait on it: the call to LiveKit has a client timeout of thirty
+/// seconds, and the loop drains the model's audio and fires the hard deadline.
+/// Best effort, as it was inline: a duplicate left in place costs some
+/// confusion in the room, while ending the loop over it cost the report.
+///
+/// Detached on purpose, unlike a side call: it makes one request that its own
+/// client timeout ends within thirty seconds, writes at most one log line and
+/// holds the cloned config only for that time, so an interview that ends under
+/// it leaves nothing running that nothing else bounds.
+pub(super) fn spawn_duplicate_eviction(
+    config: &AgentConfig,
+    room_name: &str,
+    identity: String,
+    now_seconds: u64,
+) {
+    let config = config.clone();
+    let room_name = room_name.to_owned();
+    tokio::spawn(async move {
+        if let Err(error) = evict_duplicate_agent(&config, &room_name, &identity, now_seconds).await
+        {
+            eprintln!("removing the duplicate agent failed ({error}); continuing the interview");
+        }
+    });
+}
+
 #[cfg(test)]
 #[path = "../../tests/unit/livekit/rooms.rs"]
 mod tests;

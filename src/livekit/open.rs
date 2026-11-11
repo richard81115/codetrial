@@ -313,7 +313,7 @@ pub(super) async fn open_session<'a>(
     let mut restarts = 0;
     let mut room_ready = Duration::ZERO;
     let mut gemini_ready = Duration::ZERO;
-    let (mut output_audio, mut gemini) = tokio::try_join!(
+    let joined = tokio::try_join!(
         async {
             isolate_local_agent(config, room_name, &agent_identity, now_seconds).await?;
             let published =
@@ -341,7 +341,8 @@ pub(super) async fn open_session<'a>(
             gemini_ready = setup_began.elapsed();
             opened
         },
-    )?;
+    );
+    let (mut output_audio, mut gemini) = room.close_on_error(joined).await?;
 
     output_audio.tool_ack = tool_ack;
     output_audio.tool_ack_task = tool_ack_task;
@@ -397,14 +398,15 @@ pub(super) async fn open_session<'a>(
     }
 
     let greeting = with_timer(&turn.state, boot.greeting.clone());
-    send_model_text(
+    let greeted = send_model_text(
         &mut gemini,
         &mut turn.state,
         ModelInputKind::Turn,
         TurnCause::Turn,
         &greeting,
     )
-    .await?;
+    .await;
+    room.close_on_error(greeted).await?;
     turn.activity
         .mark_prompted(Instant::now(), Some(&greeting), false);
 

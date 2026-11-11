@@ -1333,3 +1333,23 @@ async fn closing_the_room_still_collects_what_the_capture_tasks_send() {
     );
     server.abort();
 }
+
+/// The room is left from a drop guard on every exit, so the guard has to run
+/// its cleanup exactly when it is dropped, and not before.
+#[test]
+fn a_drop_guard_runs_its_cleanup_when_dropped() {
+    let ran = std::sync::atomic::AtomicBool::new(false);
+    let guard = OnDrop(Some(|| {
+        ran.store(true, std::sync::atomic::Ordering::SeqCst);
+    }));
+    assert!(!ran.load(std::sync::atomic::Ordering::SeqCst));
+    drop(guard);
+    assert!(ran.load(std::sync::atomic::Ordering::SeqCst));
+}
+
+/// A failed status write is reported, and a successful one is not.
+#[test]
+fn only_a_failed_audio_status_write_is_reported() {
+    assert!(log_audio_status_failure::<()>(&Err("database_unavailable")));
+    assert!(!log_audio_status_failure(&Ok(())));
+}
