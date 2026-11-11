@@ -18,6 +18,33 @@ fn rounds(behavioral_opened: bool) -> ReportRounds {
     }
 }
 
+/// The validator and the sanitizer that repairs its refusals read a sentence
+/// at a time. A word that makes a visual reference "the candidate's" must be in
+/// the same sentence as the reference, or the validator refuses text the
+/// sanitizer, finding nothing in any one sentence, cannot repair, and the
+/// report ends incomplete over a sentence that never mentioned a drawing.
+#[test]
+fn a_drawing_reference_is_judged_within_its_own_sentence() {
+    let problem = get_problem(Some("two-sum"));
+    let valid = valid_strict_report();
+    let judge = |report: &serde_json::Value| {
+        validate_report_for_round(report, problem, rounds(true), InterviewMode::Coding, true)
+    };
+
+    let mut spans_sentences = valid.clone();
+    spans_sentences["communicationFeedback"]["strengths"][0] =
+        json!("You provided a solution. The diagram helps.");
+    judge(&spans_sentences).expect("provided and diagram are in different sentences");
+
+    let mut same_sentence = valid;
+    same_sentence["communicationFeedback"]["strengths"][0] =
+        json!("You provided a solution. You provided a diagram.");
+    assert!(
+        judge(&same_sentence).is_err(),
+        "the same sentence is still refused"
+    );
+}
+
 #[test]
 fn coding_reports_exclude_drawings_and_keep_the_original_conversation_rubric() {
     let problem = get_problem(Some("two-sum"));

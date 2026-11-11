@@ -38,60 +38,71 @@ pub(super) fn example_drawing_judgments(
         };
         visit_strings(value, &format!("$.{key}"), &mut |path, text| {
             let words = spelled_words(text);
-            let visual_reference = words.iter().enumerate().any(|(index, word)| {
-                if problem_words.contains(word) {
-                    return false;
-                }
 
-                // References to exercise input are not references to an
-                // optional drawing. Apply this exception to each mention, so an
-                // input image cannot excuse a drawing in the same item.
-                if matches!(
-                    word.as_str(),
-                    "picture" | "pictures" | "diagram" | "diagrams"
-                ) && index
-                    .checked_sub(1)
-                    .and_then(|previous| words.get(previous))
-                    .is_some_and(|previous| matches!(previous.as_str(), "input" | "source"))
-                {
-                    return false;
-                }
-                if !matches!(
-                    word.as_str(),
-                    "drawing"
-                        | "drawings"
-                        | "diagram"
-                        | "diagrams"
-                        | "sketch"
-                        | "sketches"
-                        | "picture"
-                        | "pictures"
-                        | "whiteboard"
-                ) {
-                    return false;
-                }
-                let before = &words[..index];
-                let after = &words[index + 1..];
-                if (word == "picture" && before.last().is_some_and(|word| word == "big"))
-                    || (word == "sketch" && after.first().is_some_and(|word| word == "out"))
-                    || (word == "drawing"
-                        && after.first().is_some_and(|word| word == "on")
-                        && after.get(1).is_some_and(|word| {
-                            matches!(word.as_str(), "prior" | "previous" | "past" | "experience")
-                        }))
-                {
-                    return false;
-                }
-                let owned = before.last().is_some_and(|word| word == "your")
-                    || after.starts_with(&["you".to_string(), "drew".to_string()]);
-                let produced = before.iter().rev().take(4).any(|word| {
-                    matches!(
+            // A sentence at a time, as the sanitizer that repairs a refusal
+            // reads it: a word in one sentence cannot make a reference in the
+            // next the candidate's.
+            let visual_reference = text.split_inclusive(['.', '!', '?']).any(|sentence| {
+                let words = spelled_words(sentence);
+                words.iter().enumerate().any(|(index, word)| {
+                    if problem_words.contains(word) {
+                        return false;
+                    }
+
+                    // References to exercise input are not references to an
+                    // optional drawing. Apply this exception to each mention,
+                    // so an input image cannot excuse a drawing in the same
+                    // item.
+                    if matches!(
                         word.as_str(),
-                        "provided" | "providing" | "uploaded" | "drew"
-                    )
-                });
-                let recommendation = words.first().is_some_and(|word| word == "draw");
-                owned || produced || recommendation
+                        "picture" | "pictures" | "diagram" | "diagrams"
+                    ) && index
+                        .checked_sub(1)
+                        .and_then(|previous| words.get(previous))
+                        .is_some_and(|previous| matches!(previous.as_str(), "input" | "source"))
+                    {
+                        return false;
+                    }
+                    if !matches!(
+                        word.as_str(),
+                        "drawing"
+                            | "drawings"
+                            | "diagram"
+                            | "diagrams"
+                            | "sketch"
+                            | "sketches"
+                            | "picture"
+                            | "pictures"
+                            | "whiteboard"
+                    ) {
+                        return false;
+                    }
+                    let before = &words[..index];
+                    let after = &words[index + 1..];
+                    if (word == "picture" && before.last().is_some_and(|word| word == "big"))
+                        || (word == "sketch" && after.first().is_some_and(|word| word == "out"))
+                        || (word == "drawing"
+                            && after.first().is_some_and(|word| word == "on")
+                            && after.get(1).is_some_and(|word| {
+                                matches!(
+                                    word.as_str(),
+                                    "prior" | "previous" | "past" | "experience"
+                                )
+                            }))
+                    {
+                        return false;
+                    }
+                    let owned = before.last().is_some_and(|word| word == "your")
+                        || after.starts_with(&["you".to_string(), "drew".to_string()]);
+                    let produced = before.iter().rev().take(4).any(|word| {
+                        matches!(
+                            word.as_str(),
+                            "provided" | "providing" | "uploaded" | "drew"
+                        )
+                    });
+                    let recommendation = words.first().is_some_and(|word| word == "draw");
+                    owned || produced || recommendation
+                })
             });
 
             // An image may be the exercise's input, rather than the candidate's
