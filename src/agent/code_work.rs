@@ -283,6 +283,7 @@ pub(super) fn split_comments(language: &str, code: &str) -> (Vec<char>, String) 
             continue;
         }
         match character {
+            '\'' if digit_separator(language, &kept, chars.peek()) => kept.push(character),
             '"' | '\'' | '`' => {
                 let triple = hash_comments && tripled(&chars, character);
                 kept.push(character);
@@ -315,6 +316,21 @@ pub(super) fn split_comments(language: &str, code: &str) -> (Vec<char>, String) 
     }
     kept.retain(|character| !character.is_whitespace());
     (kept, comments)
+}
+
+/// Whether a quote between two hex digits is C or C++'s digit separator, as in
+/// `1'000'000` or `0xFF'FF`, which the browser's tokenizer reads the same way,
+/// and not the start of a character literal.
+/// The `u8` prefix of a character literal, `u8'A'`, ends in a digit too.
+fn digit_separator(language: &str, kept: &[char], after: Option<&char>) -> bool {
+    let prefix = kept
+        .len()
+        .checked_sub(2)
+        .map(|at| kept[at..].iter().collect::<String>());
+    matches!(language, "c" | "cpp")
+        && kept.last().is_some_and(char::is_ascii_hexdigit)
+        && prefix.as_deref() != Some("u8")
+        && after.is_some_and(char::is_ascii_hexdigit)
 }
 
 /// Changed by enough that an analysis of `before` may not describe `code`:

@@ -218,6 +218,29 @@ fn uncommented_chars_drops_comments_and_keeps_literals() {
     );
 }
 
+/// C and C++ separate digits with a quote, `1'000'000`, and the browser's
+/// tokenizer reads it so. Read as a string it never closes, and the comment on
+/// the line after it would count as code instead of as an explanation.
+#[test]
+fn a_digit_separator_is_not_a_quote_in_c_or_cpp() {
+    let kept = |language: &str, code: &str| {
+        uncommented_chars(language, code)
+            .into_iter()
+            .collect::<String>()
+    };
+    assert_eq!(
+        kept("cpp", "const int M = 1'000'000'007; // mod"),
+        "constintM=1'000'000'007;"
+    );
+    assert_eq!(typed_comments("c", "int m = 0xFF'FF; // why\n"), " why\n");
+    // The `u8` prefix of a character literal ends in a digit, and is not one.
+    assert_eq!(typed_comments("cpp", "char c = u8'A'; // x\n"), " x\n");
+    // A character literal is still a string, and so is any quote elsewhere.
+    assert_eq!(typed_comments("cpp", "char c = '/'; // x\n"), " x\n");
+    assert_eq!(kept("cpp", "char c = 'a'; // x"), "charc='a';");
+    assert_eq!(kept("javascript", "s = 1'000 // x"), "s=1'000//x");
+}
+
 /// A typed explanation is whatever the comparison leaves out, from the same
 /// lexer: a comment trailing code counts, and a marker inside a string, even
 /// one opening a line of a docstring, does not.
