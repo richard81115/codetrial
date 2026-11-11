@@ -641,6 +641,57 @@ async fn a_tail_short_of_a_frame_is_padded_out() {
     assert_eq!(output.tail_padding(), None);
 }
 
+/// A reply that outruns the worker by more than the queue holds is cut short,
+/// not fatal: the error used to leave the room loop and end the interview with
+/// no report, because Gemini can send faster than real time and the worker
+/// drains at real time. Only frames that were queued count toward playout.
+#[tokio::test]
+async fn a_full_output_queue_drops_the_rest_of_the_reply_and_carries_on() {
+    let (mut output, mut frames) = test_output_audio();
+    let before = output.playout_deadline;
+    let queued = output
+        .capture(&[1; 480 * 6], "audio/pcm;rate=24000")
+        .await
+        .expect("a full queue is not an error");
+    assert!(queued, "the frames that fit were queued");
+    assert_eq!(output.queued_frames(), 4);
+    assert!(
+        output.playout_deadline.saturating_duration_since(before) < Duration::from_millis(45),
+        "four frames are 40 ms of playout; a dropped frame adds none"
+    );
+
+    assert!(
+        !output
+            .capture(&[1; 480], "audio/pcm;rate=24000")
+            .await
+            .unwrap(),
+        "a chunk that finds the queue already full queued nothing"
+    );
+
+    while frames.try_recv().is_ok() {}
+    assert!(
+        output
+            .capture(&[1; 480], "audio/pcm;rate=24000")
+            .await
+            .unwrap(),
+        "the next chunk is queued once the worker has caught up"
+    );
+}
+
+/// A worker that has stopped is the other way a send fails, and that one is
+/// still an error the caller must see.
+#[tokio::test]
+async fn a_stopped_output_worker_is_still_an_error() {
+    let (mut output, frames) = test_output_audio();
+    drop(frames);
+    assert!(
+        output
+            .capture(&[1; 480], "audio/pcm;rate=24000")
+            .await
+            .is_err()
+    );
+}
+
 #[tokio::test]
 async fn latency_marker_follows_only_the_first_complete_frame() {
     let (mut output, mut frames) = test_output_audio();

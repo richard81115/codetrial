@@ -592,8 +592,6 @@ impl OutputAudio {
             LIVEKIT_OUTPUT_CHANNELS,
             &mut self.pending_bytes,
         ) {
-            queued = true;
-
             // Ten milliseconds, which is what `take_pcm16_frames` cut this
             // into. Dividing the sample count by the channel count says the
             // same thing, but the channel count is one, so it says it with an
@@ -602,22 +600,36 @@ impl OutputAudio {
             let samples_per_channel = self.sample_rate / 100;
             let frame_duration =
                 Duration::from_secs_f64(samples_per_channel as f64 / self.sample_rate as f64);
-            self.playout_deadline = self.playout_deadline.max(Instant::now()) + frame_duration;
             let frame = QueuedOutputFrame {
                 output_cancellation: self.output_cancellation.clone(),
                 samples,
                 latency_marker: self.latency_marker.take(),
             };
-            if let Err(error) = self.frames.try_send(frame) {
-                let message = match &error {
-                    mpsc::error::TrySendError::Full(_) => "output audio worker queue full",
-                    mpsc::error::TrySendError::Closed(_) => "output audio worker stopped",
-                };
-                if let Some(marker) = error.into_inner().latency_marker {
-                    let record = enqueue_failure_record(marker, Instant::now());
-                    super::latency::log(&record);
+            match self.frames.try_send(frame) {
+                Ok(()) => {
+                    queued = true;
+                    self.playout_deadline =
+                        self.playout_deadline.max(Instant::now()) + frame_duration;
                 }
-                return Err(std::io::Error::other(message).into());
+                Err(error) => {
+                    let stopped = matches!(error, mpsc::error::TrySendError::Closed(_));
+                    if let Some(marker) = error.into_inner().latency_marker {
+                        let record = enqueue_failure_record(marker, Instant::now());
+                        super::latency::log(&record);
+                    }
+                    if stopped {
+                        return Err(std::io::Error::other("output audio worker stopped").into());
+                    }
+
+                    // The worker plays at real time and Gemini can send faster,
+                    // so a long reply can fill the queue. Drop the rest of this
+                    // chunk: an error here leaves the room loop and ends the
+                    // interview with no report. Frames that were not queued add
+                    // nothing to the playout deadline. A later chunk of the
+                    // reply is queued again once the worker frees space.
+                    eprintln!("output audio worker queue full; the rest of this chunk is dropped");
+                    break;
+                }
             }
         }
         Ok(queued)
